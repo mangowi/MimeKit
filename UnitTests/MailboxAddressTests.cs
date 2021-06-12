@@ -842,5 +842,35 @@ namespace UnitTests {
 
 			AssertParse (text);
 		}
+
+		[Test]
+		public void TestParseAddrspecEndingWithDot ()
+		{
+			const string text = "test.@gmail.com";
+
+			AssertParse (text);
+
+			AssertParseFailure (text, false, 0, 5, RfcComplianceMode.Strict);
+		}
+
+		[Test]
+		public void TestParseAddrspecEndingWithDotDot ()
+		{
+			const string text = "test..@gmail.com";
+
+			AssertParse (text);
+
+			AssertParseFailure (text, false, 0, 5, RfcComplianceMode.Strict);
+		}
+
+		[Test]
+		public void TestParseAddrspecWithDotDot ()
+		{
+			const string text = "test..test@gmail.com";
+
+			AssertParse (text);
+
+			AssertParseFailure (text, false, 0, 5, RfcComplianceMode.Strict);
+		}
 	}
 }

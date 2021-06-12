@@ -297,7 +297,7 @@ namespace MimeKit {
 				Changed (this, EventArgs.Empty);
 		}
 
-		internal static bool TryParseLocalPart (byte[] text, ref int index, int endIndex, bool skipTrailingCfws, bool throwOnError, out string localpart)
+		internal static bool TryParseLocalPart (byte[] text, ref int index, int endIndex, bool strict, bool skipTrailingCfws, bool throwOnError, out string localpart)
 		{
 			var token = new StringBuilder ();
 			int startIndex = index;
@@ -305,7 +305,7 @@ namespace MimeKit {
 			localpart = null;
 
 			do {
-				if (!text[index].IsAtom () && text[index] != '"') {
+				if (!text[index].IsAtom () && text[index] != (byte) '"') {
 					if (throwOnError)
 						throw new ParseException (string.Format (CultureInfo.InvariantCulture, "Invalid local-part at offset {0}", startIndex), startIndex, index);
 
@@ -339,18 +339,23 @@ namespace MimeKit {
 					break;
 				}
 
-				token.Append ('.');
-				index++;
+				do {
+					token.Append ('.');
+					index++;
 
-				if (!ParseUtils.SkipCommentsAndWhiteSpace (text, ref index, endIndex, throwOnError))
-					return false;
+					if (!ParseUtils.SkipCommentsAndWhiteSpace (text, ref index, endIndex, throwOnError))
+						return false;
 
-				if (index >= endIndex) {
-					if (throwOnError)
-						throw new ParseException (string.Format (CultureInfo.InvariantCulture, "Incomplete local-part at offset {0}", startIndex), startIndex, index);
+					if (index >= endIndex) {
+						if (throwOnError)
+							throw new ParseException (string.Format (CultureInfo.InvariantCulture, "Incomplete local-part at offset {0}", startIndex), startIndex, index);
 
-					return false;
-				}
+						return false;
+					}
+				} while (!strict && text[index] == (byte) '.');
+
+				if (!strict && (index >= endIndex || text[index] == (byte) '@'))
+					break;
 			} while (true);
 
 			localpart = token.ToString ();
@@ -363,7 +368,7 @@ namespace MimeKit {
 
 		static readonly byte[] CommaGreaterThanOrSemiColon = { (byte) ',', (byte) '>', (byte) ';' };
 
-		internal static bool TryParseAddrspec (byte[] text, ref int index, int endIndex, byte[] sentinels, bool throwOnError, out string addrspec, out int at)
+		internal static bool TryParseAddrspec (byte[] text, ref int index, int endIndex, byte[] sentinels, bool strict, bool throwOnError, out string addrspec, out int at)
 		{
 			int startIndex = index;
 			string localpart;
@@ -371,7 +376,7 @@ namespace MimeKit {
 			addrspec = null;
 			at = -1;
 
-			if (!TryParseLocalPart (text, ref index, endIndex, true, throwOnError, out localpart))
+			if (!TryParseLocalPart (text, ref index, endIndex, strict, true, throwOnError, out localpart))
 				return false;
 
 			if (index >= endIndex || ParseUtils.IsSentinel (text[index], sentinels)) {
@@ -419,6 +424,7 @@ namespace MimeKit {
 
 		internal static bool TryParseMailbox (ParserOptions options, byte[] text, int startIndex, ref int index, int endIndex, string name, int codepage, bool throwOnError, out InternetAddress address)
 		{
+			var strict = options.AddressParserComplianceMode == RfcComplianceMode.Strict;
 			DomainList route = null;
 			Encoding encoding;
 
@@ -435,7 +441,7 @@ namespace MimeKit {
 
 			// Note: check for excessive angle brackets like the example described in section 7.1.2 of rfc7103...
 			if (index < endIndex && text[index] == (byte) '<') {
-				if (options.AddressParserComplianceMode == RfcComplianceMode.Strict) {
+				if (strict) {
 					if (throwOnError)
 						throw new ParseException (string.Format (CultureInfo.InvariantCulture, "Excessive angle brackets at offset {0}", index), startIndex, index);
 
@@ -495,14 +501,14 @@ namespace MimeKit {
 			string addrspec;
 			int at;
 
-			if (!TryParseAddrspec (text, ref index, endIndex, CommaGreaterThanOrSemiColon, throwOnError, out addrspec, out at))
+			if (!TryParseAddrspec (text, ref index, endIndex, CommaGreaterThanOrSemiColon, strict, throwOnError, out addrspec, out at))
 				return false;
 
 			if (!ParseUtils.SkipCommentsAndWhiteSpace (text, ref index, endIndex, throwOnError))
 				return false;
 
 			if (index >= endIndex || text[index] != (byte) '>') {
-				if (options.AddressParserComplianceMode == RfcComplianceMode.Strict) {
+				if (strict) {
 					if (throwOnError)
 						throw new ParseException (string.Format (CultureInfo.InvariantCulture, "Unexpected end of mailbox at offset {0}", startIndex), startIndex, index);
 
@@ -690,7 +696,7 @@ namespace MimeKit {
 				// rewind back to the beginning of the local-part
 				index = startIndex;
 
-				if (!TryParseLocalPart (text, ref index, endIndex, false, throwOnError, out addrspec))
+				if (!TryParseLocalPart (text, ref index, endIndex, strict, false, throwOnError, out addrspec))
 					return false;
 
 				ParseUtils.SkipWhiteSpace (text, ref index, endIndex);
@@ -783,7 +789,7 @@ namespace MimeKit {
 				// rewind back to the beginning of the local-part
 				index = startIndex;
 
-				if (!TryParseAddrspec (text, ref index, endIndex, CommaGreaterThanOrSemiColon, throwOnError, out addrspec, out at))
+				if (!TryParseAddrspec (text, ref index, endIndex, CommaGreaterThanOrSemiColon, strict, throwOnError, out addrspec, out at))
 					return false;
 
 				ParseUtils.SkipWhiteSpace (text, ref index, endIndex);
